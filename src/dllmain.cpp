@@ -9,6 +9,7 @@
 #include "overlay/overlay.h"
 #include "core/config.h"
 #include "core/log.h"
+#include "capture/dx11_resource_logger.h"
 
 namespace core {
     Config& config() {
@@ -36,8 +37,9 @@ static std::wstring dll_directory(HMODULE self) {
 
 static void install_hooks_thread() {
     // Hooking touches other modules, so keep it off the loader lock.
+    capture::dx11log::install();             // Sonic Frontiers DX11 FSR input scout logs
     hooks::install_swapchain_hooks();         // overlay + FSR present path
-    depth::install();                         // generic depth-buffer extraction
+    depth::install();                         // generic depth-buffer extraction + RTV/HUDless clues
 }
 
 BOOL APIENTRY DllMain(HMODULE self, DWORD reason, LPVOID) {
@@ -50,6 +52,7 @@ BOOL APIENTRY DllMain(HMODULE self, DWORD reason, LPVOID) {
         std::thread(install_hooks_thread).detach();
     } else if (reason == DLL_PROCESS_DETACH) {
         overlay::shutdown();
+        capture::dx11log::shutdown();
         depth::shutdown();
         hooks::dx12::shutdown();
         hooks::remove_swapchain_hooks();
@@ -66,29 +69,29 @@ BOOL APIENTRY DllMain(HMODULE self, DWORD reason, LPVOID) {
 // ---------------------------------------------------------------------------
 extern "C" {
 
-__declspec(dllexport) HRESULT WINAPI CreateDXGIFactory(REFIID riid, void** pp) {
+STDAPI CreateDXGIFactory(REFIID riid, void** pp) {
     using Fn = HRESULT(WINAPI*)(REFIID, void**);
     HRESULT hr = reinterpret_cast<Fn>(proxy::p_CreateDXGIFactory)(riid, pp);
     if (SUCCEEDED(hr) && pp && *pp) hooks::dx12::install_factory_hooks(reinterpret_cast<IUnknown*>(*pp));
     return hr;
 }
-__declspec(dllexport) HRESULT WINAPI CreateDXGIFactory1(REFIID riid, void** pp) {
+STDAPI CreateDXGIFactory1(REFIID riid, void** pp) {
     using Fn = HRESULT(WINAPI*)(REFIID, void**);
     HRESULT hr = reinterpret_cast<Fn>(proxy::p_CreateDXGIFactory1)(riid, pp);
     if (SUCCEEDED(hr) && pp && *pp) hooks::dx12::install_factory_hooks(reinterpret_cast<IUnknown*>(*pp));
     return hr;
 }
-__declspec(dllexport) HRESULT WINAPI CreateDXGIFactory2(UINT flags, REFIID riid, void** pp) {
+STDAPI CreateDXGIFactory2(UINT flags, REFIID riid, void** pp) {
     using Fn = HRESULT(WINAPI*)(UINT, REFIID, void**);
     HRESULT hr = reinterpret_cast<Fn>(proxy::p_CreateDXGIFactory2)(flags, riid, pp);
     if (SUCCEEDED(hr) && pp && *pp) hooks::dx12::install_factory_hooks(reinterpret_cast<IUnknown*>(*pp));
     return hr;
 }
-__declspec(dllexport) HRESULT WINAPI DXGIGetDebugInterface1(UINT flags, REFIID riid, void** pp) {
+STDAPI DXGIGetDebugInterface1(UINT flags, REFIID riid, void** pp) {
     using Fn = HRESULT(WINAPI*)(UINT, REFIID, void**);
     return reinterpret_cast<Fn>(proxy::p_DXGIGetDebugInterface1)(flags, riid, pp);
 }
-__declspec(dllexport) HRESULT WINAPI DXGIDeclareAdapterRemovalSupport() {
+STDAPI DXGIDeclareAdapterRemovalSupport() {
     using Fn = HRESULT(WINAPI*)();
     return reinterpret_cast<Fn>(proxy::p_DXGIDeclareAdapterRemovalSupport)();
 }
