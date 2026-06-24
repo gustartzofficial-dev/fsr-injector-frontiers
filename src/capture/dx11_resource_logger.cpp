@@ -217,7 +217,11 @@ namespace {
 }
 
 bool install() {
-    MH_Initialize();
+    MH_STATUS init = MH_Initialize();
+    if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED) {
+        LOGF("[dx11-scout] MH_Initialize failed mh=%d", (int)init);
+        return false;
+    }
 
     ID3D11Device* dev = nullptr;
     ID3D11DeviceContext* ctx = nullptr;
@@ -232,27 +236,37 @@ bool install() {
     }
 
     void** vt = *reinterpret_cast<void***>(ctx);
+    struct HookSpec { void* target; void* detour; void** orig; const char* name; };
+    HookSpec hooks[] = {
+        { vt[8],  reinterpret_cast<LPVOID>(&hk_PSSetShaderResources), reinterpret_cast<void**>(&g_orig_ps_srvs), "PSSetShaderResources" },
+        { vt[9],  reinterpret_cast<LPVOID>(&hk_PSSetShader),          reinterpret_cast<void**>(&g_orig_ps_shader), "PSSetShader" },
+        { vt[12], reinterpret_cast<LPVOID>(&hk_DrawIndexed),          reinterpret_cast<void**>(&g_orig_draw_indexed), "DrawIndexed" },
+        { vt[13], reinterpret_cast<LPVOID>(&hk_Draw),                 reinterpret_cast<void**>(&g_orig_draw), "Draw" },
+        { vt[20], reinterpret_cast<LPVOID>(&hk_DrawIndexedInstanced), reinterpret_cast<void**>(&g_orig_draw_indexed_instanced), "DrawIndexedInstanced" },
+        { vt[21], reinterpret_cast<LPVOID>(&hk_DrawInstanced),        reinterpret_cast<void**>(&g_orig_draw_instanced), "DrawInstanced" },
+    };
+
     bool ok = true;
-    ok = ok && MH_CreateHook(vt[8], reinterpret_cast<LPVOID>(&hk_PSSetShaderResources), reinterpret_cast<void**>(&g_orig_ps_srvs)) == MH_OK;
-    ok = ok && MH_CreateHook(vt[9], reinterpret_cast<LPVOID>(&hk_PSSetShader), reinterpret_cast<void**>(&g_orig_ps_shader)) == MH_OK;
-    ok = ok && MH_CreateHook(vt[12], reinterpret_cast<LPVOID>(&hk_DrawIndexed), reinterpret_cast<void**>(&g_orig_draw_indexed)) == MH_OK;
-    ok = ok && MH_CreateHook(vt[13], reinterpret_cast<LPVOID>(&hk_Draw), reinterpret_cast<void**>(&g_orig_draw)) == MH_OK;
-    ok = ok && MH_CreateHook(vt[20], reinterpret_cast<LPVOID>(&hk_DrawIndexedInstanced), reinterpret_cast<void**>(&g_orig_draw_indexed_instanced)) == MH_OK;
-    ok = ok && MH_CreateHook(vt[21], reinterpret_cast<LPVOID>(&hk_DrawInstanced), reinterpret_cast<void**>(&g_orig_draw_instanced)) == MH_OK;
+    for (const HookSpec& h : hooks) {
+        MH_STATUS cs = MH_CreateHook(h.target, h.detour, h.orig);
+        if (cs != MH_OK && cs != MH_ERROR_ALREADY_CREATED) {
+            LOGF("[dx11-scout] hook create failed %s mh=%d", h.name, (int)cs);
+            ok = false;
+            continue;
+        }
+        MH_STATUS es = MH_EnableHook(h.target);
+        if (es != MH_OK && es != MH_ERROR_ENABLED) {
+            LOGF("[dx11-scout] hook enable failed %s mh=%d", h.name, (int)es);
+            ok = false;
+        }
+    }
 
     ctx->Release();
     dev->Release();
 
-    if (!ok) {
-        LOGF("[dx11-scout] hook create failed");
-        return false;
-    }
-    if (MH_EnableHook(MH_ALL_HOOKS) != MH_OK) {
-        LOGF("[dx11-scout] enable hooks failed");
-        return false;
-    }
+    if (!ok) return false;
 
-    LOGF("[dx11-scout] installed: PSSetShaderResources, PSSetShader, Draw/DrawIndexed/Instanced");
+    LOGF("[dx11-scout] installed after UI hook: PSSetShaderResources, PSSetShader, Draw/DrawIndexed/Instanced");
     return true;
 }
 

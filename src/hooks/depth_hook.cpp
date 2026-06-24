@@ -121,7 +121,7 @@ namespace {
             if (candidate) {
                 std::lock_guard<std::mutex> lk(g_mtx);
                 ++g_rtv_seen_count;
-                if (g_rtv_candidate_count < 96 || num_rtvs == 1) {
+                if (g_rtv_candidate_count < 96) {
                     ++g_rtv_candidate_count;
                     LOGF("[dx11-scout] rtv/color-candidate slot=%u/%u %ux%u fmt=%s bind=0x%X samples=%u hasDSV=%s note=%s",
                          slot, num_rtvs, d.Width, d.Height, color_fmt_name(d.Format), d.BindFlags,
@@ -213,7 +213,11 @@ namespace {
 }
 
 bool install() {
-    MH_Initialize();
+    MH_STATUS init = MH_Initialize();
+    if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED) {
+        LOGF("[depth] MH_Initialize failed mh=%d", (int)init);
+        return false;
+    }
 
     ID3D11Device* dev=nullptr; ID3D11DeviceContext* ctx=nullptr; D3D_FEATURE_LEVEL fl;
     HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0,

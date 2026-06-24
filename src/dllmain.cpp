@@ -36,10 +36,12 @@ static std::wstring dll_directory(HMODULE self) {
 }
 
 static void install_hooks_thread() {
-    // Hooking touches other modules, so keep it off the loader lock.
-    capture::dx11log::install();             // Sonic Frontiers DX11 FSR input scout logs
+    // Keep base injector behavior first: Present hook owns GUI/Home overlay.
+    // Scout hooks are installed after, so they cannot block the UI path if MinHook
+    // was already initialized by the swapchain hook.
     hooks::install_swapchain_hooks();         // overlay + FSR present path
     depth::install();                         // generic depth-buffer extraction + RTV/HUDless clues
+    capture::dx11log::install();             // Sonic Frontiers DX11 FSR input scout logs
 }
 
 BOOL APIENTRY DllMain(HMODULE self, DWORD reason, LPVOID) {
