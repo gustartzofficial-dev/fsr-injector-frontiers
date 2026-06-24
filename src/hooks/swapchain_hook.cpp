@@ -133,11 +133,8 @@ static bool acquire_vtables(void**& vt, void**& vt1) {
 }
 
 bool install_swapchain_hooks() {
-    MH_STATUS init = MH_Initialize();
-    if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED) {
-        LOGF("[hook] MH_Initialize failed mh=%d", (int)init);
-        return false;
-    }
+    MH_STATUS mh_init = MH_Initialize();
+    if (mh_init != MH_OK && mh_init != MH_ERROR_ALREADY_INITIALIZED) { LOGF("[hook] MH_Initialize failed mh=%d", (int)mh_init); return false; }
 
     void** vt = nullptr; void** vt1 = nullptr;
     if (!acquire_vtables(vt, vt1)) { LOGF("[hook] could not acquire swapchain vtable"); return false; }

@@ -25,8 +25,6 @@ namespace {
     UINT                       g_best_area = 0;
     uint64_t                   g_fail_count = 0;
     uint64_t                   g_seen_count = 0;
-    uint64_t                   g_rtv_seen_count = 0;
-    uint64_t                   g_rtv_candidate_count = 0;
 
     const char* fmt_name_locked(DXGI_FORMAT f) {
         switch (f) {
@@ -76,62 +74,6 @@ namespace {
         if (g_copy) { g_copy->Release(); g_copy = nullptr; }
         g_readable = false;
         g_fail_count = 0;
-    }
-
-
-
-    bool colorish(DXGI_FORMAT f) {
-        switch (f) {
-            case DXGI_FORMAT_R8G8B8A8_UNORM:
-            case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
-            case DXGI_FORMAT_B8G8R8A8_UNORM:
-            case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
-            case DXGI_FORMAT_R10G10B10A2_UNORM:
-            case DXGI_FORMAT_R16G16B16A16_FLOAT:
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    const char* color_fmt_name(DXGI_FORMAT f) {
-        switch (f) {
-            case DXGI_FORMAT_R8G8B8A8_UNORM: return "R8G8B8A8_UNORM";
-            case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: return "R8G8B8A8_UNORM_SRGB";
-            case DXGI_FORMAT_B8G8R8A8_UNORM: return "B8G8R8A8_UNORM";
-            case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: return "B8G8R8A8_UNORM_SRGB";
-            case DXGI_FORMAT_R10G10B10A2_UNORM: return "R10G10B10A2_UNORM";
-            case DXGI_FORMAT_R16G16B16A16_FLOAT: return "R16G16B16A16_FLOAT";
-            default: return "other";
-        }
-    }
-
-    void consider_rtv(ID3D11RenderTargetView* rtv, UINT slot, UINT num_rtvs, bool has_dsv) {
-        if (!rtv) return;
-        ID3D11Resource* res = nullptr;
-        rtv->GetResource(&res);
-        if (!res) return;
-        ID3D11Texture2D* tex = nullptr;
-        if (SUCCEEDED(res->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&tex))) && tex) {
-            D3D11_TEXTURE2D_DESC d{};
-            tex->GetDesc(&d);
-            float aspect = d.Height ? static_cast<float>(d.Width) / static_cast<float>(d.Height) : 0.f;
-            bool screenish = d.Width >= 640 && d.Height >= 360 && aspect >= 1.2f && aspect <= 2.5f;
-            bool candidate = screenish && colorish(d.Format);
-            if (candidate) {
-                std::lock_guard<std::mutex> lk(g_mtx);
-                ++g_rtv_seen_count;
-                if (g_rtv_candidate_count < 96) {
-                    ++g_rtv_candidate_count;
-                    LOGF("[dx11-scout] rtv/color-candidate slot=%u/%u %ux%u fmt=%s bind=0x%X samples=%u hasDSV=%s note=%s",
-                         slot, num_rtvs, d.Width, d.Height, color_fmt_name(d.Format), d.BindFlags,
-                         d.SampleDesc.Count, has_dsv ? "yes" : "no",
-                         has_dsv ? "scene-or-gbuffer" : "possible-postprocess-or-hudless-color");
-                }
-            }
-            tex->Release();
-        }
-        res->Release();
     }
 
     void consider(ID3D11Texture2D* tex, const D3D11_TEXTURE2D_DESC& d) {
@@ -193,9 +135,6 @@ namespace {
     void STDMETHODCALLTYPE hk_OMSetRT(ID3D11DeviceContext* ctx, UINT num,
                                       ID3D11RenderTargetView* const* rtvs,
                                       ID3D11DepthStencilView* dsv) {
-        if (rtvs) {
-            for (UINT i = 0; i < num; ++i) consider_rtv(rtvs[i], i, num, dsv != nullptr);
-        }
         if (dsv) {
             ID3D11Resource* res = nullptr; dsv->GetResource(&res);
             if (res) {
@@ -213,11 +152,7 @@ namespace {
 }
 
 bool install() {
-    MH_STATUS init = MH_Initialize();
-    if (init != MH_OK && init != MH_ERROR_ALREADY_INITIALIZED) {
-        LOGF("[depth] MH_Initialize failed mh=%d", (int)init);
-        return false;
-    }
+    MH_Initialize();
 
     ID3D11Device* dev=nullptr; ID3D11DeviceContext* ctx=nullptr; D3D_FEATURE_LEVEL fl;
     HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0,

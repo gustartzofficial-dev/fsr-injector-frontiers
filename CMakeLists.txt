@@ -46,20 +46,18 @@ target_include_directories(imgui PUBLIC
 target_compile_definitions(imgui PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 
 # MinGW's d3d12 headers miss PFN_D3D12_SERIALIZE_ROOT_SIGNATURE; force-include a shim
-# providing it, scoped to just the DX12 backend translation unit. MSVC must not
-# receive the GCC-style -include flag.
-if(MINGW)
-    set_source_files_properties(
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
-        PROPERTIES COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw_d3d12_shim.h"
-    )
-endif()
+# providing it, scoped to just the DX12 backend translation unit.
+set_source_files_properties(
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
+    PROPERTIES COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw_d3d12_shim.h"
+)
 
 # --- Our proxy DLL ---
 # Target is named "fsr_proxy" to avoid colliding with the system "dxgi" import
 # library it links against; the OUTPUT_NAME below makes the file "dxgi.dll".
 add_library(fsr_proxy SHARED
     src/dllmain.cpp
+    src/dxgi_proxy.def
     src/proxy/dxgi_proxy.cpp
     src/hooks/swapchain_hook.cpp
     src/hooks/depth_hook.cpp
@@ -73,7 +71,6 @@ add_library(fsr_proxy SHARED
     src/fsr/framegen.cpp
     src/fsr/upscaler.cpp
     src/core/log.cpp
-    src/dxgi_proxy.def
 )
 
 target_include_directories(fsr_proxy PRIVATE src)
