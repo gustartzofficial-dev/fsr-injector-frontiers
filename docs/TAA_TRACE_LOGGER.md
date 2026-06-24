@@ -1,62 +1,80 @@
-# Sonic Frontiers TAA Trace Logger
+# Sonic Frontiers TAA Trace Logger v2
 
-This build adds a DX11 trace logger focused on the HE2 `TemporalUpscalerJob` / TAA path discovered through HE2 DevTools.
+This build adds a stricter DX11 trace logger for the Hedgehog Engine 2 temporal pipeline.
 
-DevTools evidence we are targeting:
+## Why this exists
 
-- `TemporalUpscalerJob` exists in the live rendering pipeline.
+HE2 DevTools confirmed these engine-level facts:
+
+- `TemporalUpscalerJob` exists in the main rendering pipeline.
 - `taa.enableUpscaling` exists.
-- `taa.velocityVarianceBasedWeightBias`, `taa.velocityVarianceMin`, and `taa.velocityVarianceMax` exist.
+- `taa.velocityVarianceBasedWeightBias`, `velocityVarianceMin`, and `velocityVarianceMax` exist.
 - `taa.enableCharaStencilMask` exists.
 
-The logger does not implement FSR3 yet. Its job is to identify the resources that the temporal/upscaler pass consumes.
+That means the renderer has a velocity-aware temporal upscaler/TAA path. The DX11 DLL cannot read those engine object names directly, so this logger watches the DX11 command stream and tries to catch the GPU state that corresponds to that temporal pass.
 
-## What the logger hooks
+## What v2 logs
+
+The logger hooks:
 
 - `ID3D11Device::CreateTexture2D`
 - `ID3D11DeviceContext::OMSetRenderTargets`
 - `ID3D11DeviceContext::OMSetRenderTargetsAndUnorderedAccessViews`
 - `ID3D11DeviceContext::PSSetShaderResources`
 - `ID3D11DeviceContext::CSSetShaderResources`
-- `ID3D11DeviceContext::CSSetUnorderedAccessViews`
 - `ID3D11DeviceContext::PSSetShader`
 - `ID3D11DeviceContext::CSSetShader`
 - `Draw`, `DrawIndexed`, instanced draw calls
 - `Dispatch`
 
-## What to search for in `fsr-injector.log`
+It records texture format, resolution, bind flags, and resource pointer for likely temporal resources.
 
-Search for:
+## What changed from v1
+
+v1 was too loose. It flagged early simple copy/upscale passes such as:
+
+```text
+RTV0 = R8G8B8A8_UNORM 1920x1080
+PS_SRV0 = R8G8B8A8_UNORM 1280x720
+```
+
+v2 ignores that pattern.
+
+v2 only emits `[taa-trace] candidate` when the currently bound state looks like a real temporal pass:
+
+- output target exists, or compute dispatch has rich SRVs
+- HDR/scene-color-like resource is present
+- depth/depth-stencil-like resource is present
+- multiple history/color-like resources are present
+- velocity-like or packed-data-like resource is present
+
+## What to search for after testing
+
+Open `fsr-injector.log` and search for:
 
 ```text
 [taa-trace] candidate
 ```
 
-A useful candidate should show a late fullscreen draw or compute dispatch with a group like:
+Useful candidate lines will include groups like:
 
 ```text
-RTV/UAV: final output target
-DSV or SRV: depth
-PS_SRV/CS_SRV: HDR/scene color
-PS_SRV/CS_SRV: history-like color
-PS_SRV/CS_SRV: velocity-like R8G8/RG16/RGBA8 texture
+RTV0
+DSV0
+PS_SRV0
+PS_SRV1
+PS_SRV2
+CS_SRV0
 ```
 
-Also search for:
+The goal is to identify:
 
-```text
-[taa-trace] create2d
-```
+- scene color / HDR input
+- depth / stencil input
+- TAA history input
+- velocity / motion vector candidate
+- temporal upscaler output
 
-This gives the high-value textures created by the game: format, resolution, bind flags, and resource pointer.
+## Important
 
-## Test procedure
-
-1. Use a clean Sonic Frontiers install with this `dxgi.dll`.
-2. Start gameplay in a normal island area.
-3. Move the camera for 5-10 seconds.
-4. Open the HE2 DevTools rendering window and confirm TAA/upscaler is enabled.
-5. Close the game.
-6. Upload/paste the `fsr-injector.log`, especially `[taa-trace] candidate` blocks.
-
-Do not judge this build by visual quality. It is a discovery build.
+This is not the FSR3 implementation yet. It is the trace tool needed before FSR3 can be wired correctly.

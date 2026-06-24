@@ -176,14 +176,14 @@ set FSRINJ_DX11_MENU_IN_GEN=0
 
 
 
-## Sonic Frontiers TAA / TemporalUpscaler trace build
+## Sonic Frontiers TAA Trace Logger v2
 
-This version includes a DX11 trace logger for the HE2 temporal pipeline discovered in HE2 DevTools. It is meant to identify the real resources behind:
+This build includes a stricter DX11 trace logger for the HE2 `TemporalUpscalerJob` / TAA path. It uses the DevTools discovery (`taa.enableUpscaling`, velocity variance parameters, and character stencil masking) as a guide, then logs the DX11 resources bound around likely temporal passes.
 
-- scene/HDR color
-- depth/stencil
-- TAA history
-- velocity / motion-vector candidate textures
-- final pre-UI output target
+After testing, open `fsr-injector.log` and search for:
 
-Look for `[taa-trace] candidate` blocks in `fsr-injector.log`. See `docs/TAA_TRACE_LOGGER.md` for the test procedure.
+```text
+[taa-trace] candidate
+```
+
+See `docs/TAA_TRACE_LOGGER.md` for what the log means.

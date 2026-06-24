@@ -38,8 +38,8 @@ static std::wstring dll_directory(HMODULE self) {
 static void install_hooks_thread() {
     // Hooking touches other modules, so keep it off the loader lock.
     hooks::install_swapchain_hooks();         // overlay + FSR present path
-    capture::dx11log::install();              // HE2 TAA / TemporalUpscaler resource trace
     depth::install();                         // generic depth-buffer extraction
+    capture::dx11log::install();              // HE2 TemporalUpscaler/TAA trace logger v2
 }
 
 BOOL APIENTRY DllMain(HMODULE self, DWORD reason, LPVOID) {

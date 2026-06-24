@@ -2,10 +2,8 @@
 
 namespace capture::dx11log {
 
-// Installs a targeted DX11 trace logger for Sonic Frontiers / HE2.
-// It does not modify rendering; it only records resource bindings around
-// temporal-upscaler/TAA-like fullscreen passes so we can identify color,
-// depth, history, and velocity inputs.
+// Sonic Frontiers HE2 TemporalUpscaler / TAA trace logger.
+// This is intentionally a data-gathering tool: it does not modify rendering.
 bool install();
 void shutdown();
 

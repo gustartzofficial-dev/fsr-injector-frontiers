@@ -47,10 +47,17 @@ target_compile_definitions(imgui PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 
 # MinGW's d3d12 headers miss PFN_D3D12_SERIALIZE_ROOT_SIGNATURE; force-include a shim
 # providing it, scoped to just the DX12 backend translation unit.
-set_source_files_properties(
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
-    PROPERTIES COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw_d3d12_shim.h"
-)
+if(MSVC)
+    set_source_files_properties(
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
+        PROPERTIES COMPILE_OPTIONS "/FI${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw_d3d12_shim.h"
+    )
+else()
+    set_source_files_properties(
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
+        PROPERTIES COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw_d3d12_shim.h"
+    )
+endif()
 
 # --- Our proxy DLL ---
 # Target is named "fsr_proxy" to avoid colliding with the system "dxgi" import
