@@ -189,9 +189,9 @@ After testing, open `fsr-injector.log` and search for:
 See `docs/TAA_TRACE_LOGGER.md` for what the log means.
 
 
-## TAA Trace Logger v3
+## TAA Trace Logger v4
 
-This build includes the v3 Sonic Frontiers TAA tracer. It adds a lightweight pseudo frame snapshot and corrected compute-stage DX11 hooks so we can inspect dispatches that may correspond to HE2 `TemporalUpscalerJob`.
+This build includes the v4 Sonic Frontiers TAA tracer. It adds a lightweight pseudo frame snapshot and corrected compute-stage DX11 hooks so we can inspect dispatches that may correspond to HE2 `TemporalUpscalerJob`.
 
 Look in `fsr-injector.log` for:
 
@@ -203,3 +203,8 @@ CS_UAV
 ```
 
 See `docs/TAA_TRACE_LOGGER.md` for the exact testing notes.
+
+
+## v4 update
+
+This build adds compute dispatch probing. At every `Dispatch` / `DispatchIndirect`, the tracer actively queries current `CSSetShaderResources` and `CSSetUnorderedAccessViews` bindings and writes `[compute-probe]` blocks. Search logs for `[compute-probe]`, `CS_SRV`, and `CS_UAV`. This is intended to catch HE2 TemporalUpscaler/TAA compute inputs that v2/v3 strict candidate filters missed.

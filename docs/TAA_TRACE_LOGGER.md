@@ -1,8 +1,8 @@
-# Sonic Frontiers TAA Trace Logger v3
+# Sonic Frontiers TAA Trace Logger v4
 
 This build adds a stricter HE2 TemporalUpscaler/TAA tracer plus a lightweight pseudo frame snapshot.
 
-## What v3 logs
+## What v4 logs
 
 Search the game log for:
 
@@ -14,13 +14,13 @@ CS_UAV
 CS_SRV
 ```
 
-## Why v3 exists
+## Why v4 exists
 
 v1 was too noisy and caught simple copy/upscale fullscreen draws.
 
 v2 was clean but too strict and missed the real temporal path. It also did not reliably see compute-stage bindings because the compute vtable indices were wrong.
 
-v3 fixes that by:
+v4 fixes that by:
 
 - tracking draw and dispatch events
 - hooking compute shader resources
@@ -73,4 +73,9 @@ A good hit may look like:
 [taa-trace]   CS_SRV2 ...
 ```
 
-If v3 works correctly, it should show compute dispatches with their input textures and output UAVs, which is the missing information from v2.
+If v4 works correctly, it should show compute dispatches with their input textures and output UAVs, which is the missing information from v2.
+
+
+## v4 update
+
+This build adds compute dispatch probing. At every `Dispatch` / `DispatchIndirect`, the tracer actively queries current `CSSetShaderResources` and `CSSetUnorderedAccessViews` bindings and writes `[compute-probe]` blocks. Search logs for `[compute-probe]`, `CS_SRV`, and `CS_UAV`. This is intended to catch HE2 TemporalUpscaler/TAA compute inputs that v2/v3 strict candidate filters missed.

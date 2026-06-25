@@ -103,6 +103,8 @@ uint64_t g_event_counter = 0;
 uint64_t g_candidate_counter = 0;
 uint64_t g_snapshot_counter = 0;
 uint64_t g_create_logged = 0;
+uint64_t g_compute_dump_counter = 0;
+uint64_t g_compute_probe_counter = 0;
 uint64_t g_last_present_tick = 0;
 LARGE_INTEGER g_qpc_freq{};
 LARGE_INTEGER g_last_qpc{};
@@ -356,6 +358,61 @@ void log_bind_state(const char* prefix_all) {
     for (int i = 0; i < static_cast<int>(g_state.cs_srvs.size()); ++i) log_view("CS_SRV", i, g_state.cs_srvs[i]);
 }
 
+void refresh_compute_state_from_context_locked(ID3D11DeviceContext* ctx) {
+    if (!ctx) return;
+
+    ID3D11ShaderResourceView* srvs[32]{};
+    ctx->CSGetShaderResources(0, 32, srvs);
+    for (int i = 0; i < 32; ++i) {
+        g_state.cs_srvs[i] = from_srv(srvs[i]);
+        if (srvs[i]) srvs[i]->Release();
+    }
+
+    ID3D11UnorderedAccessView* uavs[16]{};
+    ctx->CSGetUnorderedAccessViews(0, 16, uavs);
+    for (int i = 0; i < 16; ++i) {
+        g_state.cs_uavs[i] = from_uav(uavs[i]);
+        if (uavs[i]) uavs[i]->Release();
+    }
+
+    ID3D11RenderTargetView* rtvs[8]{};
+    ID3D11DepthStencilView* dsv = nullptr;
+    ctx->OMGetRenderTargets(8, rtvs, &dsv);
+    for (int i = 0; i < 8; ++i) {
+        g_state.rtvs[i] = from_rtv(rtvs[i]);
+        if (rtvs[i]) rtvs[i]->Release();
+    }
+    g_state.dsv = from_dsv(dsv);
+    if (dsv) dsv->Release();
+}
+
+void log_compute_probe_locked(const char* kind, UINT a, UINT b, UINT c, const ScoreInfo& s) {
+    // v4: dump real compute bindings, pulled from the context at Dispatch time.
+    // This intentionally does not require the strict TAA candidate rule.
+    if (g_compute_dump_counter >= 220) return;
+    bool has_any_screenish_cs_input = false;
+    bool has_any_screenish_cs_output = false;
+    for (const auto& v : g_state.cs_srvs) {
+        if (v.res && screenish(v.tex.width, v.tex.height)) { has_any_screenish_cs_input = true; break; }
+    }
+    for (const auto& v : g_state.cs_uavs) {
+        if (v.res && screenish(v.tex.width, v.tex.height)) { has_any_screenish_cs_output = true; break; }
+    }
+    if (!has_any_screenish_cs_input && !has_any_screenish_cs_output) return;
+
+    ++g_compute_dump_counter;
+    LOGF("[compute-probe] #%llu kind=%s event=%llu draw=%llu dispatch=%llu args=%u,%u,%u score=%d out=%d uavOut=%d hdr=%d depth=%d strongVel=%d weakVel=%d history=%d srvs=%d cs=0x%p",
+         static_cast<unsigned long long>(g_compute_dump_counter), kind,
+         static_cast<unsigned long long>(g_event_counter),
+         static_cast<unsigned long long>(g_draw_counter),
+         static_cast<unsigned long long>(g_dispatch_counter),
+         a, b, c, s.score, s.output_count, s.uav_count, s.has_hdr ? 1 : 0, s.has_depth ? 1 : 0,
+         s.has_strong_velocity ? 1 : 0, s.has_weak_velocity ? 1 : 0, s.color_history_count, s.srv_count, g_state.cs);
+    for (int i = 0; i < static_cast<int>(g_state.cs_srvs.size()); ++i) log_view("CS_SRV", i, g_state.cs_srvs[i]);
+    for (int i = 0; i < static_cast<int>(g_state.cs_uavs.size()); ++i) log_view("CS_UAV", i, g_state.cs_uavs[i]);
+    log_view("DSV", 0, g_state.dsv);
+}
+
 void log_snapshot_locked(const char* kind, UINT a, UINT b, UINT c, const ScoreInfo& s, const char* reason) {
     if (g_snapshot_counter >= 90) return;
     if (s.score < 6) return;
@@ -562,13 +619,16 @@ void STDMETHODCALLTYPE hk_Dispatch(ID3D11DeviceContext* ctx, UINT x, UINT y, UIN
     {
         std::lock_guard<std::mutex> lk(g_mtx);
         ++g_dispatch_counter;
+        refresh_compute_state_from_context_locked(ctx);
         evaluate_candidate_locked("Dispatch", x, y, z);
+        ScoreInfo si = build_score_locked();
+        log_compute_probe_locked("Dispatch", x, y, z, si);
         if (g_dispatch_counter == 1 || g_dispatch_counter == 100 || (g_dispatch_counter % 1000) == 0) {
-            LOGF("[taa-trace] dispatch-progress draw=%llu dispatch=%llu events=%llu candidates=%llu snapshots=%llu creates=%llu trackedTextures=%llu",
+            LOGF("[taa-trace] dispatch-progress draw=%llu dispatch=%llu events=%llu candidates=%llu snapshots=%llu computeProbes=%llu creates=%llu trackedTextures=%llu",
                  static_cast<unsigned long long>(g_draw_counter), static_cast<unsigned long long>(g_dispatch_counter),
                  static_cast<unsigned long long>(g_event_counter), static_cast<unsigned long long>(g_candidate_counter),
-                 static_cast<unsigned long long>(g_snapshot_counter), static_cast<unsigned long long>(g_next_tex_id - 1),
-                 static_cast<unsigned long long>(g_textures.size()));
+                 static_cast<unsigned long long>(g_snapshot_counter), static_cast<unsigned long long>(g_compute_dump_counter),
+                 static_cast<unsigned long long>(g_next_tex_id - 1), static_cast<unsigned long long>(g_textures.size()));
         }
     }
     g_orig_dispatch(ctx, x, y, z);
@@ -578,7 +638,10 @@ void STDMETHODCALLTYPE hk_DispatchIndirect(ID3D11DeviceContext* ctx, ID3D11Buffe
     {
         std::lock_guard<std::mutex> lk(g_mtx);
         ++g_dispatch_counter;
+        refresh_compute_state_from_context_locked(ctx);
         evaluate_candidate_locked("DispatchIndirect", offset, 0, 0);
+        ScoreInfo si = build_score_locked();
+        log_compute_probe_locked("DispatchIndirect", offset, 0, 0, si);
     }
     g_orig_dispatch_indirect(ctx, args, offset);
 }
@@ -647,9 +710,9 @@ bool install() {
 
     if (!ok) LOGF("[taa-trace] install incomplete; logger may be partial");
 
-    LOGF("[taa-trace] v3 installed: TemporalUpscaler/TAA tracer + pseudo frame snapshot");
-    LOGF("[taa-trace] v3 hooks CS SRV/UAV/shader with corrected D3D11 vtable indices 67/68/69");
-    LOGF("[taa-trace] v3 logs [frame-snapshot] rich draw/compute events and [taa-trace] candidate stronger matches");
+    LOGF("[taa-trace] v4 installed: compute-resource tracer + pseudo frame snapshot");
+    LOGF("[taa-trace] v4 actively queries CS SRV/UAV bindings at Dispatch time");
+    LOGF("[taa-trace] v4 logs [compute-probe], [frame-snapshot], and [taa-trace] candidate matches");
     LOGF("[taa-trace] purpose: identify HE2 TemporalUpscaler inputs: scene color, depth/stencil, history, velocity/motion vectors, compute UAV output");
     return ok;
 }
@@ -669,6 +732,8 @@ void shutdown() {
     g_candidate_counter = 0;
     g_snapshot_counter = 0;
     g_create_logged = 0;
+    g_compute_dump_counter = 0;
+    g_compute_probe_counter = 0;
     g_last_qpc = {};
 }
 
