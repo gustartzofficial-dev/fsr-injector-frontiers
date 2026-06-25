@@ -187,3 +187,19 @@ After testing, open `fsr-injector.log` and search for:
 ```
 
 See `docs/TAA_TRACE_LOGGER.md` for what the log means.
+
+
+## TAA Trace Logger v3
+
+This build includes the v3 Sonic Frontiers TAA tracer. It adds a lightweight pseudo frame snapshot and corrected compute-stage DX11 hooks so we can inspect dispatches that may correspond to HE2 `TemporalUpscalerJob`.
+
+Look in `fsr-injector.log` for:
+
+```text
+[frame-snapshot]
+[taa-trace] candidate
+CS_SRV
+CS_UAV
+```
+
+See `docs/TAA_TRACE_LOGGER.md` for the exact testing notes.
